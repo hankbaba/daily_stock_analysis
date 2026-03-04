@@ -540,6 +540,10 @@ class GeminiAnalyzer:
             return [k for k in config.gemini_api_keys if k and len(k) >= 8]
         if model.startswith("anthropic/"):
             return [k for k in config.anthropic_api_keys if k and len(k) >= 8]
+        # Check if model is GLM (openai/glm-* or contains glm in model name)
+        model_lower = model.lower()
+        if "glm" in model_lower or model.startswith("zhipu/"):
+            return [k for k in config.glm_api_keys if k and len(k) >= 8]
         return [k for k in config.openai_api_keys if k and len(k) >= 8]
 
     @staticmethod
@@ -547,7 +551,12 @@ class GeminiAnalyzer:
         """Build extra litellm params (api_base, headers) for OpenAI-compatible models."""
         params: Dict[str, Any] = {}
         if not model.startswith("gemini/") and not model.startswith("anthropic/") and not model.startswith("vertex_ai/"):
-            if config.openai_base_url:
+            # Check if model is GLM (use glm_base_url)
+            model_lower = model.lower()
+            if "glm" in model_lower or model.startswith("zhipu/"):
+                if config.glm_base_url:
+                    params["api_base"] = config.glm_base_url
+            elif config.openai_base_url:
                 params["api_base"] = config.openai_base_url
             if config.openai_base_url and "aihubmix.com" in config.openai_base_url:
                 params["extra_headers"] = {"APP-Code": "GPIJ3886"}

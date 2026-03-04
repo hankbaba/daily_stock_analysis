@@ -93,6 +93,12 @@ class Config:
     openai_vision_model: Optional[str] = None  # Vision 专用模型（可选，不配置则用 openai_model；部分模型如 DeepSeek 不支持图像）
     openai_temperature: float = 0.7  # OpenAI 温度参数（0.0-2.0，默认0.7）
 
+    # 智谱 GLM API（OpenAI 兼容模式，国内推荐）
+    glm_api_key: Optional[str] = None
+    glm_api_keys: List[str] = field(default_factory=list)
+    glm_base_url: str = "https://open.bigmodel.cn/api/coding/paas/v4"
+    glm_model: str = "glm-4.7"
+
     # === 搜索引擎配置（支持多 Key 负载均衡）===
     bocha_api_keys: List[str] = field(default_factory=list)  # Bocha API Keys
     tavily_api_keys: List[str] = field(default_factory=list)  # Tavily API Keys
@@ -394,16 +400,27 @@ class Config:
             if _fallback_key:
                 openai_api_keys = [_fallback_key]
 
+        # GLM_API_KEYS > GLM_API_KEY
+        _glm_keys_raw = os.getenv('GLM_API_KEYS', '')
+        glm_api_keys = [k.strip() for k in _glm_keys_raw.split(',') if k.strip()]
+        _single_glm = os.getenv('GLM_API_KEY', '').strip()
+        if not glm_api_keys and _single_glm:
+            glm_api_keys = [_single_glm]
+
         # LITELLM_MODEL: explicit config takes precedence; else infer from available keys
         litellm_model = os.getenv('LITELLM_MODEL', '').strip()
         if not litellm_model:
             _gemini_model_name = os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview').strip()
             _anthropic_model_name = os.getenv('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022').strip()
             _openai_model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini').strip()
+            _glm_model_name = os.getenv('GLM_MODEL', 'glm-4.7').strip()
             if gemini_api_keys:
                 litellm_model = f'gemini/{_gemini_model_name}'
             elif anthropic_api_keys:
                 litellm_model = f'anthropic/{_anthropic_model_name}'
+            elif glm_api_keys:
+                # GLM uses OpenAI-compatible mode
+                litellm_model = f'openai/{_glm_model_name}'
             elif openai_api_keys:
                 # For openai-compatible models, add prefix only if not already prefixed
                 if '/' not in _openai_model_name:
@@ -482,6 +499,11 @@ class Config:
             openai_model=os.getenv('OPENAI_MODEL', 'gpt-4o-mini'),
             openai_vision_model=os.getenv('OPENAI_VISION_MODEL') or None,
             openai_temperature=float(os.getenv('OPENAI_TEMPERATURE', '0.7')),
+            # Zhipu GLM (OpenAI-compatible mode, recommended for China)
+            glm_api_key=os.getenv('GLM_API_KEY'),
+            glm_api_keys=glm_api_keys,
+            glm_base_url=os.getenv('GLM_BASE_URL', 'https://open.bigmodel.cn/api/coding/paas/v4'),
+            glm_model=os.getenv('GLM_MODEL', 'glm-4.7'),
             bocha_api_keys=bocha_api_keys,
             tavily_api_keys=tavily_api_keys,
             brave_api_keys=brave_api_keys,
@@ -718,9 +740,9 @@ class Config:
         if not self.tushare_token:
             warnings.append("提示：未配置 Tushare Token，将使用其他数据源")
         
-        has_any_llm_key = bool(self.gemini_api_keys or self.anthropic_api_keys or self.openai_api_keys)
+        has_any_llm_key = bool(self.gemini_api_keys or self.anthropic_api_keys or self.openai_api_keys or self.glm_api_keys)
         if not has_any_llm_key:
-            warnings.append("警告：未配置任何 LLM API Key（GEMINI_API_KEY/ANTHROPIC_API_KEY/OPENAI_API_KEY），AI 分析功能将不可用")
+            warnings.append("警告：未配置任何 LLM API Key（GEMINI_API_KEY/ANTHROPIC_API_KEY/OPENAI_API_KEY/GLM_API_KEY），AI 分析功能将不可用")
         elif not self.litellm_model:
             warnings.append(
                 "提示：LITELLM_MODEL 未配置，将自动从可用 API Key 推断模型。"
