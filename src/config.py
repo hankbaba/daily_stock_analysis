@@ -71,7 +71,7 @@ class Config:
 
     # Legacy single-key fields (kept for backward compatibility; gemini_api_keys[0] when set)
     gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-3-flash-preview"  # 主模型
+    gemini_model: str = "gemini-3.1-pro-preview"  # 主模型
     gemini_model_fallback: str = "gemini-2.5-flash"  # 备选模型
     gemini_temperature: float = 0.7  # 温度参数（0.0-2.0，控制输出随机性，默认0.7）
 
@@ -410,7 +410,7 @@ class Config:
         # LITELLM_MODEL: explicit config takes precedence; else infer from available keys
         litellm_model = os.getenv('LITELLM_MODEL', '').strip()
         if not litellm_model:
-            _gemini_model_name = os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview').strip()
+            _gemini_model_name = os.getenv('GEMINI_MODEL', 'gemini-3.1-pro-preview').strip()
             _anthropic_model_name = os.getenv('ANTHROPIC_MODEL', 'claude-3-5-sonnet-20241022').strip()
             _openai_model_name = os.getenv('OPENAI_MODEL', 'gpt-4o-mini').strip()
             _glm_model_name = os.getenv('GLM_MODEL', 'glm-4.7').strip()
@@ -476,7 +476,7 @@ class Config:
             anthropic_api_keys=anthropic_api_keys,
             openai_api_keys=openai_api_keys,
             gemini_api_key=os.getenv('GEMINI_API_KEY'),
-            gemini_model=os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview'),
+            gemini_model=os.getenv('GEMINI_MODEL', 'gemini-3.1-pro-preview'),
             gemini_model_fallback=os.getenv('GEMINI_MODEL_FALLBACK', 'gemini-2.5-flash'),
             gemini_temperature=float(os.getenv('GEMINI_TEMPERATURE', '0.7')),
             gemini_request_delay=float(os.getenv('GEMINI_REQUEST_DELAY', '2.0')),
