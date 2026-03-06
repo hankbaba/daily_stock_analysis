@@ -92,6 +92,7 @@ jobs:
           # 数据源
           # ==========================================
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+          ENABLE_EASTMONEY_PATCH: 'true'
           
           # ==========================================
           # 搜索服务

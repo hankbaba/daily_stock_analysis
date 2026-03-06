@@ -40,6 +40,24 @@ logger = logging.getLogger(__name__)
 STANDARD_COLUMNS = ['date', 'open', 'high', 'low', 'close', 'volume', 'amount', 'pct_chg']
 
 
+def is_etf_code(stock_code: str) -> bool:
+    """
+    Check if the stock code is an ETF fund code.
+
+    ETF code rules:
+    - Shanghai ETF: 51xxxx, 52xxxx, 56xxxx, 58xxxx
+    - Shenzhen ETF: 15xxxx, 16xxxx, 18xxxx
+
+    Args:
+        stock_code: Stock/fund code
+
+    Returns:
+        True if ETF code, False otherwise
+    """
+    etf_prefixes = ('51', '52', '56', '58', '15', '16', '18')
+    return stock_code.startswith(etf_prefixes) and len(stock_code) == 6
+
+
 def normalize_stock_code(stock_code: str) -> str:
     """
     Normalize stock code by stripping exchange prefixes/suffixes.
@@ -380,11 +398,13 @@ class DataFetcherManager:
         from .pytdx_fetcher import PytdxFetcher
         from .baostock_fetcher import BaostockFetcher
         from .yfinance_fetcher import YfinanceFetcher
+        from .eastmoney_fund_fetcher import EastMoneyFundFetcher
         from src.config import get_config
 
         config = get_config()
 
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
+        eastmoney_fund = EastMoneyFundFetcher()  # ETF专用数据源（优先级-1）
         efinance = EfinanceFetcher()
         akshare = AkshareFetcher()
         tushare = TushareFetcher()  # 会根据 Token 配置自动调整优先级
@@ -394,6 +414,7 @@ class DataFetcherManager:
 
         # 初始化数据源列表
         self._fetchers = [
+            eastmoney_fund,  # ETF专用数据源（优先级-1，仅ETF使用）
             efinance,
             akshare,
             tushare,
@@ -475,7 +496,41 @@ class DataFetcherManager:
             logger.error(error_summary)
             raise DataFetchError(error_summary)
 
+        # ETF routing: prioritize EastMoneyFundFetcher for ETF codes
+        # The fetcher will raise exception for non-ETF codes, allowing fallback
+        if is_etf_code(stock_code):
+            etf_errors = []
+            for fetcher in self._fetchers:
+                if fetcher.name == "EastMoneyFundFetcher":
+                    try:
+                        logger.info(f"[{fetcher.name}] ETF {stock_code} 优先路由到天天基金...")
+                        df = fetcher.get_daily_data(
+                            stock_code=stock_code,
+                            start_date=start_date,
+                            end_date=end_date,
+                            days=days,
+                        )
+                        if df is not None and not df.empty:
+                            logger.info(f"[{fetcher.name}] 成功获取 ETF {stock_code}")
+                            return df, fetcher.name
+                    except Exception as e:
+                        error_msg = f"[{fetcher.name}] 失败: {str(e)}"
+                        logger.warning(error_msg)
+                        etf_errors.append(error_msg)
+                    break
+
+            # If EastMoneyFundFetcher fails, continue with other fetchers
+            if etf_errors:
+                logger.warning(f"天天基金获取 ETF {stock_code} 失败，尝试其他数据源...")
+                errors.extend(etf_errors)
+
         for fetcher in self._fetchers:
+            # Skip EastMoneyFundFetcher:
+            # - If ETF: already tried in ETF routing section above
+            # - If not ETF: this fetcher only supports ETF codes
+            if fetcher.name == "EastMoneyFundFetcher":
+                continue
+
             try:
                 logger.info(f"尝试使用 [{fetcher.name}] 获取 {stock_code}...")
                 df = fetcher.get_daily_data(

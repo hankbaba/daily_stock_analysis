@@ -10,6 +10,7 @@
 3. 历史数据获取测试
 4. 实时行情获取测试
 5. 数据源状态检查
+6. ETF专用数据源测试（天天基金）
 
 使用方法：
     # 测试所有数据源（按优先级）
@@ -23,6 +24,10 @@
 
     # 测试单个数据源
     python scripts/test_data_sources.py --fetcher efinance
+
+    # 测试 ETF 数据（使用天天基金数据源）
+    python scripts/test_data_sources.py --etf
+    python scripts/test_data_sources.py --etf --fetcher eastmoney_fund
 
     # 测试实时行情
     python scripts/test_data_sources.py --realtime
@@ -82,6 +87,7 @@ def import_data_sources():
         from data_provider.pytdx_fetcher import PytdxFetcher
         from data_provider.baostock_fetcher import BaostockFetcher
         from data_provider.yfinance_fetcher import YfinanceFetcher
+        from data_provider.eastmoney_fund_fetcher import EastMoneyFundFetcher
 
         return {
             'manager': DataFetcherManager,
@@ -92,6 +98,7 @@ def import_data_sources():
             'pytdx': PytdxFetcher,
             'baostock': BaostockFetcher,
             'yfinance': YfinanceFetcher,
+            'eastmoney_fund': EastMoneyFundFetcher,
         }
     except ImportError as e:
         logger.error(f"导入数据源失败: {e}")
@@ -102,6 +109,12 @@ def import_data_sources():
 
 # === 数据源信息 ===
 FETCHER_INFO = {
+    'eastmoney_fund': {
+        'name': 'EastMoneyFundFetcher',
+        'priority': -1,  # ETF专用，最高优先级
+        'description': '天天基金（ETF专用，免费、无需Token）',
+        'module': 'eastmoney_fund'
+    },
     'efinance': {
         'name': 'EfinanceFetcher',
         'priority': 0,
@@ -303,7 +316,9 @@ def test_all_fetchers(sources: dict, stock_code: str, days: int = 30):
 
     results = []
 
-    for fetcher_key, fetcher_class in [('efinance', sources['efinance']),
+    # 注意：eastmoney_fund 仅支持 ETF 代码
+    for fetcher_key, fetcher_class in [('eastmoney_fund', sources['eastmoney_fund']),
+                                         ('efinance', sources['efinance']),
                                          ('akshare', sources['akshare']),
                                          ('tushare', sources['tushare']),
                                          ('pytdx', sources['pytdx']),
@@ -321,11 +336,11 @@ def test_all_fetchers(sources: dict, stock_code: str, days: int = 30):
 
     # 打印汇总
     print_header("测试结果汇总")
-    print(f"\n  {'数据源':<20} {'状态':<10} {'记录数':<10}")
-    print(f"  {'-' * 40}")
+    print(f"\n  {'数据源':<25} {'状态':<10} {'记录数':<10}")
+    print(f"  {'-' * 45}")
     for r in results:
         status = "成功" if r['success'] else "失败"
-        print(f"  {r['name']:<20} {status:<10} {r['records']:<10}")
+        print(f"  {r['name']:<25} {status:<10} {r['records']:<10}")
 
     success_count = sum(1 for r in results if r['success'])
     print(f"\n  总计: {success_count}/{len(results)} 个数据源可用")
@@ -357,12 +372,14 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
-  python scripts/test_data_sources.py                    # 测试按优先级获取
-  python scripts/test_data_sources.py --stock 600519     # 测试指定股票
-  python scripts/test_data_sources.py --fetcher efinance # 测试单个数据源
-  python scripts/test_data_sources.py --all              # 测试所有数据源
-  python scripts/test_data_sources.py --realtime         # 测试实时行情
-  python scripts/test_data_sources.py --list             # 列出数据源
+  python scripts/test_data_sources.py                       # 测试按优先级获取
+  python scripts/test_data_sources.py --stock 600519        # 测试指定股票
+  python scripts/test_data_sources.py --fetcher efinance    # 测试单个数据源
+  python scripts/test_data_sources.py --all                 # 测试所有数据源
+  python scripts/test_data_sources.py --realtime            # 测试实时行情
+  python scripts/test_data_sources.py --list                # 列出数据源
+  python scripts/test_data_sources.py --etf                 # 测试 ETF（使用512880）
+  python scripts/test_data_sources.py --etf --fetcher eastmoney_fund  # 测试天天基金
         """
     )
 
@@ -370,8 +387,11 @@ def main():
                         help='股票代码 (默认: 600519)')
     parser.add_argument('--days', type=int, default=30,
                         help='获取天数 (默认: 30)')
-    parser.add_argument('--fetcher', type=str, choices=['efinance', 'akshare', 'tushare', 'pytdx', 'baostock', 'yfinance'],
+    parser.add_argument('--fetcher', type=str,
+                        choices=['eastmoney_fund', 'efinance', 'akshare', 'tushare', 'pytdx', 'baostock', 'yfinance'],
                         help='测试单个数据源')
+    parser.add_argument('--etf', action='store_true',
+                        help='使用 ETF 示例代码 (512880) 进行测试')
     parser.add_argument('--all', action='store_true',
                         help='测试所有数据源')
     parser.add_argument('--realtime', action='store_true',
@@ -387,27 +407,33 @@ def main():
     if args.verbose:
         setup_logging(verbose=True)
 
+    # 处理 --etf 选项
+    stock_code = args.stock
+    if args.etf:
+        stock_code = '512880'  # 证券ETF作为默认ETF测试代码
+        print(f"  [ETF模式] 使用 ETF 示例代码: {stock_code}")
+
     # 导入数据源
     sources = import_data_sources()
 
     print_header("股票数据源测试工具")
     print(f"  测试时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  测试股票: {args.stock}")
+    print(f"  测试股票: {stock_code}")
 
     # 执行测试
     if args.list:
         list_fetchers(sources)
     elif args.fetcher:
-        test_single_fetcher(sources[args.fetcher], args.stock, args.days)
+        test_single_fetcher(sources[args.fetcher], stock_code, args.days)
     elif args.all:
-        test_all_fetchers(sources, args.stock, args.days)
+        test_all_fetchers(sources, stock_code, args.days)
     else:
         # 默认：测试按优先级获取
-        test_manager_with_priority(sources, args.stock, args.days)
+        test_manager_with_priority(sources, stock_code, args.days)
 
     # 如果指定，测试实时行情
     if args.realtime and not args.list:
-        test_realtime_quote(sources, args.stock)
+        test_realtime_quote(sources, stock_code)
 
     print(f"\n{'=' * 80}\n")
 
