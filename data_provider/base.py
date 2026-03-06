@@ -701,7 +701,36 @@ class DataFetcherManager:
                     break
             logger.warning(f"[实时行情] 美股 {stock_code} 无可用数据源")
             return None
-        
+
+        # ETF 代码优先使用 EastMoneyFundFetcher（实时行情）
+        if is_etf_code(stock_code):
+            for fetcher in self._fetchers:
+                if fetcher.name == "EastMoneyFundFetcher":
+                    if hasattr(fetcher, 'get_realtime_quote'):
+                        try:
+                            quote = fetcher.get_realtime_quote(stock_code)
+                            if quote is not None:
+                                # Convert dict to UnifiedRealtimeQuote
+                                from .realtime_types import UnifiedRealtimeQuote, RealtimeSource
+                                if isinstance(quote, dict):
+                                    unified_quote = UnifiedRealtimeQuote(
+                                        code=quote.get('code', stock_code),
+                                        name=quote.get('name', ''),
+                                        price=float(quote.get('price', 0)),
+                                        change_pct=float(quote.get('change_pct', 0)),
+                                        pre_close=float(quote.get('prev_close', 0)),
+                                        volume=int(quote.get('volume', 0)),
+                                        amount=float(quote.get('amount', 0)),
+                                        source=RealtimeSource.EASTMONEY_FUND,
+                                    )
+                                    logger.info(f"[实时行情] ETF {stock_code} 成功获取 (来源: EastMoneyFundFetcher)")
+                                    return unified_quote
+                                return quote
+                        except Exception as e:
+                            logger.warning(f"[实时行情] ETF {stock_code} EastMoneyFundFetcher 获取失败: {e}")
+                    break
+            # 如果 EastMoneyFundFetcher 失败，继续尝试其他数据源
+
         # 获取配置的数据源优先级
         source_priority = config.realtime_source_priority.split(',')
         

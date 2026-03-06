@@ -99,6 +99,7 @@ class RealtimeSource(Enum):
     TUSHARE = "tushare"             # Tushare Pro
     TENCENT = "tencent"             # 腾讯直连
     SINA = "sina"                   # 新浪直连
+    EASTMONEY_FUND = "eastmoney_fund"  # 天天基金（ETF专用）
     FALLBACK = "fallback"           # 降级兜底
 
 

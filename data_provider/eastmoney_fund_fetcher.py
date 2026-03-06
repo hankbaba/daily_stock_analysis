@@ -92,7 +92,9 @@ class EastMoneyFundFetcher(BaseFetcher):
 
     # API endpoints
     HISTORICAL_NAV_URL = "http://api.fund.eastmoney.com/f10/lsjz"
-    REALTIME_ESTIMATE_URL = "http://fundgz.eastmoney.com/js/{fund_code}.js"
+    # Old API (deprecated, returns HTML now): http://fundgz.eastmoney.com/js/{fund_code}.js
+    # New API: EastMoney push API for realtime stock/ETF quotes
+    REALTIME_QUOTE_URL = "http://push2.eastmoney.com/api/qt/stock/get?secid={market}.{code}&fields=f43,f44,f45,f46,f47,f48,f49,f50,f51,f52,f55,f57,f58,f60,f170,f171"
 
     def __init__(self, sleep_min: float = 1.0, sleep_max: float = 2.0):
         """
@@ -328,7 +330,7 @@ class EastMoneyFundFetcher(BaseFetcher):
 
     def get_realtime_quote(self, stock_code: str) -> Optional[Dict[str, Any]]:
         """
-        Get realtime ETF estimate from TianTian Fund
+        Get realtime ETF quote from EastMoney push API
 
         Args:
             stock_code: ETF fund code
@@ -345,30 +347,41 @@ class EastMoneyFundFetcher(BaseFetcher):
             session = self._get_session()
             self._set_random_user_agent()
 
-            url = self.REALTIME_ESTIMATE_URL.format(fund_code=stock_code)
+            # Determine market: 1=Shanghai (51,52,56,58), 0=Shenzhen (15,16,18)
+            if stock_code.startswith(('51', '52', '56', '58')):
+                market = '1'  # Shanghai
+            else:
+                market = '0'  # Shenzhen
+
+            url = self.REALTIME_QUOTE_URL.format(market=market, code=stock_code)
             response = session.get(url, timeout=10)
             response.raise_for_status()
 
-            # Parse JS response: var fund_gz = {...};
-            content = response.text
-
-            # Extract JSON from JS variable
+            # Parse JSON response
             import json
-            import re
+            data = response.json()
 
-            match = re.search(r'var\s+fund_gz\s*=\s*(\{.*?\});', content, re.DOTALL)
-            if not match:
-                logger.warning(f"[{self.name}] Could not parse realtime data for {stock_code}")
+            if not data or not data.get('data'):
+                logger.warning(f"[{self.name}] No realtime data for {stock_code}")
                 return None
 
-            data = json.loads(match.group(1))
+            quote_data = data['data']
+
+            # Parse fields (prices need to be divided by 1000)
+            # f43: current price, f57: code, f58: name, f60: prev close
+            # f47: volume, f48: amount
+            price = quote_data.get('f43', 0) / 1000
+            prev_close = quote_data.get('f60', 0) / 1000
+            change_pct = ((price - prev_close) / prev_close * 100) if prev_close > 0 else 0
 
             return {
-                'code': stock_code,
-                'name': data.get('name', ''),
-                'price': float(data.get('gsz', 0)),
-                'change_pct': float(data.get('gszzl', 0)),
-                'time': data.get('gztime', ''),
+                'code': quote_data.get('f57', stock_code),
+                'name': quote_data.get('f58', ''),
+                'price': price,
+                'change_pct': round(change_pct, 2),
+                'prev_close': prev_close,
+                'volume': quote_data.get('f47', 0),
+                'amount': quote_data.get('f48', 0),
                 'source': self.name,
             }
 
